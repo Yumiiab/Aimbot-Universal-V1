@@ -1,0 +1,226 @@
+--[[
+  ==========================================
+  | AIMBOT DELTA EXECUTOR MOBILE (MELHORADO)
+  | Atualizado: 06/2024
+  | Compatível com: Arsenal, Phantom Forces, Bad Business
+  | Adaptado para dispositivos móveis
+  | Controle via toque e toggle com botão virtual
+  ==========================================
+--]]
+
+-- Serviços essenciais
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+-- Configurações PRINCIPAIS (ajuste aqui)
+local Config = {
+    Ativo = true,
+    Suavidade = 0.1, -- 0.05 (forte) até 0.3 (suave)
+    AlcanceMira = 150,
+    MostrarAlcance = true,
+    TimeCheck = false,
+    PrevisaoMovimento = 0.15,
+    MiraAutomatica = true,
+    DistanciaMinima = 5,     -- Distância mínima para ativar a mira (evitar mirar em alvos muito próximos)
+    ToggleTouchSize = UDim2.new(0, 60, 0, 60), -- Tamanho do botão toggle
+}
+
+-- Estado interno para controle
+local estado = {
+    ligado = Config.Ativo,
+    alvoAtual = nil,
+    ativandoMira = false,
+}
+
+-- Criação da INTERFACE para exibir status e controles
+local function CriarInterface()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "AimbotGUI_Mobile"
+    screenGui.Parent = game:GetService("CoreGui")
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 260, 0, 80)
+    frame.Position = UDim2.new(0.02, 0, 0.02, 0)
+    frame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    frame.BorderSizePixel = 0
+    frame.Active = true
+    frame.Draggable = true
+    frame.Parent = screenGui
+
+    local titulo = Instance.new("TextLabel")
+    titulo.Text = "🔫 AIMBOT DELTA MOBILE"
+    titulo.Size = UDim2.new(1, 0, 0, 30)
+    titulo.Font = Enum.Font.SourceSansBold
+    titulo.TextColor3 = Color3.fromRGB(0, 255, 200)
+    titulo.BackgroundTransparency = 1
+    titulo.Parent = frame
+
+    local status = Instance.new("TextLabel")
+    status.Name = "StatusLabel"
+    status.Text = estado.ligado and "STATUS: [ATIVO]" or "STATUS: [DESATIVADO]"
+    status.Size = UDim2.new(1, 0, 0, 20)
+    status.Position = UDim2.new(0, 0, 0.4, 0)
+    status.Font = Enum.Font.SourceSans
+    status.TextColor3 = estado.ligado and Color3.fromRGB(50, 255, 50) or Color3.fromRGB(255, 50, 50)
+    status.BackgroundTransparency = 1
+    status.Parent = frame
+
+    local toggleButton = Instance.new("TextButton")
+    toggleButton.Size = Config.ToggleTouchSize
+    toggleButton.Position = UDim2.new(1, -Config.ToggleTouchSize.X.Offset - 10, 1, -Config.ToggleTouchSize.Y.Offset - 10)
+    toggleButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    toggleButton.BorderSizePixel = 0
+    toggleButton.Text = estado.ligado and "OFF" or "ON"
+    toggleButton.Font = Enum.Font.SourceSansBold
+    toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    toggleButton.TextScaled = true
+    toggleButton.Parent = screenGui
+    toggleButton.ZIndex = 10
+    toggleButton.AutoButtonColor = false
+
+    toggleButton.MouseButton1Click:Connect(function()
+        estado.ligado = not estado.ligado
+        status.Text = estado.ligado and "STATUS: [ATIVO]" or "STATUS: [DESATIVADO]"
+        status.TextColor3 = estado.ligado and Color3.fromRGB(50, 255, 50) or Color3.fromRGB(255, 50, 50)
+        toggleButton.Text = estado.ligado and "OFF" or "ON"
+        circle.Visible = estado.ligado and Config.MostrarAlcance or false
+    end)
+
+    return screenGui, status, toggleButton
+end
+
+local ScreenGui, StatusLabel, ToggleButton = CriarInterface()
+
+-- Círculo do FOV (visível na tela)
+local circle = Drawing.new("Circle")
+circle.Visible = Config.MostrarAlcance
+circle.Radius = Config.AlcanceMira
+circle.Position = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+circle.Color = Color3.fromRGB(255, 50, 50)
+circle.Thickness = 1
+circle.NumSides = 64
+
+-- Função para apontar a mira para o alvo com suavidade e previsão
+local function MirarAlvo(alvo)
+    if not alvo then return end
+    local posCamera = Camera.CFrame.Position
+    local posAlvo = alvo.Position
+
+    -- Previsão de movimento
+    if Config.PrevisaoMovimento > 0 and alvo.AssemblyLinearVelocity then
+        posAlvo = posAlvo + (alvo.AssemblyLinearVelocity * Config.PrevisaoMovimento)
+    end
+
+    -- Calcula a direção desejada
+    local direcao = (posAlvo - posCamera).Unit
+    local direcaoAtual = Camera.CFrame.LookVector
+    local novaDirecao = direcaoAtual:Lerp(direcao, 1 - Config.Suavidade)
+
+    -- Aplica a nova câmera mirando suavemente
+    Camera.CFrame = CFrame.lookAt(posCamera, posCamera + novaDirecao)
+
+    -- Disparo automático
+    if Config.MiraAutomatica and LocalPlayer.Character then
+        local arma = LocalPlayer.Character:FindFirstChildOfClass("Tool")
+        if arma and arma:IsA("Tool") then
+            pcall(function()
+                arma:Activate()
+            end)
+        end
+    end
+end
+
+-- Função para verificar se jogador está visível para a câmera (raycast)
+local function EhVisivel(alvo)
+    local origem = Camera.CFrame.Position
+    local direcao = (alvo.Position - origem).Unit * 2000
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterDescendantsInstances = {LocalPlayer.Character}
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    local resultado = workspace:Raycast(origem, direcao, raycastParams)
+
+    if resultado and not resultado.Instance:IsDescendantOf(alvo.Parent) then
+        return false
+    end
+    return true
+end
+
+-- Encontrar o melhor alvo dentro do alcance e campo de visão
+local function EncontrarAlvo()
+    local melhorAlvo = nil
+    local menorDistancia = Config.AlcanceMira
+
+    for _, jogador in pairs(Players:GetPlayers()) do
+        if jogador == LocalPlayer then continue end
+        if not jogador.Character then continue end
+
+        local humanoide = jogador.Character:FindFirstChildOfClass("Humanoid")
+        local rootPart = jogador.Character:FindFirstChild("HumanoidRootPart")
+
+        if not humanoide or humanoide.Health <= 0 or not rootPart then continue end
+        if Config.TimeCheck and jogador.Team == LocalPlayer.Team then continue end
+
+        if not EhVisivel(rootPart) then continue end
+
+        -- Calcula distância da tela ao cursor (em mobile, cursor está na metade da tela)
+        local posTela, visivel = Camera:WorldToViewportPoint(rootPart.Position)
+        if not visivel then continue end
+
+        local centerScreen = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+        local distancia = (Vector2.new(posTela.X, posTela.Y) - centerScreen).Magnitude
+
+        -- Exige distância mínima para evitar alvos muito próximos
+        local distanciaFisica = (rootPart.Position - Camera.CFrame.Position).Magnitude
+        if distanciaFisica < Config.DistanciaMinima then continue end
+
+        if distancia < menorDistancia then
+            menorDistancia = distancia
+            melhorAlvo = rootPart
+        end
+    end
+
+    return melhorAlvo
+end
+
+-- Variável para controlar toque ativo
+local toqueAtivo = false
+
+-- Detectar toque para ativar a mira
+UserInputService.TouchStarted:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if not estado.ligado then return end
+    toqueAtivo = true
+end)
+
+UserInputService.TouchEnded:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    toqueAtivo = false
+end)
+
+-- Loop principal de atualização por frame
+RunService.RenderStepped:Connect(function()
+    -- Atualização do círculo de alcance
+    circle.Radius = Config.AlcanceMira
+    circle.Position = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+
+    if not estado.ligado then
+        circle.Visible = false
+        return
+    else
+        circle.Visible = Config.MostrarAlcance
+    end
+
+    if toqueAtivo then
+        local alvo = EncontrarAlvo()
+        if alvo then
+            MirarAlvo(alvo)
+        end
+    end
+end)
+
+print("✅ AIMBOT DELTA MOBILE CARREGADO!")
+print("Use o botão virtual para ligar/desligar o aimbot.")
+print("Toque na tela para mirar automaticamente.")
